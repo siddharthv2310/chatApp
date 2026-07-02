@@ -31,34 +31,36 @@ io.on("connection", (socket) => {
         message: "Welcome to Socket.IO Chat!"
     });
 
-    // ==========================
+    
     // Join Chat
-    // ==========================
-
-    socket.on("join-chat", (username) => {
+    
+    socket.on("join-room", ({username,room}) => {
 
         socket.username = username;
+        socket.room = room;
 
-        console.log(`${username} joined the chat`);
+        socket.join(room);
 
-        socket.broadcast.emit("user-joined", {
+        console.log(`${username} joined ${room}`);
+
+        socket.broadcast.to(room).emit("user-joined", {
             username
         });
 
     });
 
-    // ==========================
+    
     // Send Message
-    // ==========================
 
     socket.on("send-message", (message) => {
 
         console.log(`${socket.username} : ${message}`);
 
-        io.emit("receive-message", {
+        io.to(socket.room).emit("receive-message", {
             id: socket.id,
             username: socket.username,
             text: message,
+            room: socket.room,
             time: new Date().toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit"
@@ -67,9 +69,8 @@ io.on("connection", (socket) => {
 
     });
 
-    // ==========================
+    
     // Disconnect
-    // ==========================
 
     socket.on("disconnect", () => {
 
@@ -81,13 +82,13 @@ io.on("connection", (socket) => {
 
             console.log(`${socket.username} left the chat`);
 
-            io.emit("user-left", {
+            io.to(socket.room).emit("user-left", {
                 username: socket.username
             });
 
         }
 
-        console.log("------------------------------------");
+        console.log(`${socket.username} disconnected`);
 
     });
 

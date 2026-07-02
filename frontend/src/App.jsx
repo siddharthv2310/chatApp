@@ -8,6 +8,7 @@ function App() {
   const [socketId, setSocketId] = useState("");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
+  const [room,setRoom] = useState("");
 
   const bottomRef = useRef(null);
 
@@ -84,11 +85,11 @@ function App() {
 
   const joinChat = () => {
 
-    if (!username.trim()) return;
+    if (!username.trim() || !room.trim()) return;
 
     socket.connect();
 
-    socket.emit("join-chat", username);
+    socket.emit("join-room", {username,room});
 
     setJoined(true);
 
@@ -135,10 +136,34 @@ function App() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") joinChat();
+              if (e.key === "Enter" ){
+                if(!username.trim() || !room.trim()){
+                  window.alert("enter the required details")
+                }
+                else{
+                  joinChat();
+                }
+              } 
             }}
             placeholder="Enter Username"
             className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            type ="text"
+            value={room}
+            onChange={(e) => setRoom(e.target.value)}
+            placeholder="enter the room name"
+            onKeyDown={(e)=>{
+              if (e.key === "Enter" ){
+                if(!username.trim() || !room.trim()){
+                  window.alert("enter the required details")
+                }
+                else{
+                  joinChat();
+                }
+              } 
+            }}
+             className="w-full border rounded-lg p-3 outline-none mt-4 focus:ring-2 focus:ring-blue-500"
           />
 
           <button
@@ -169,11 +194,11 @@ function App() {
           <div>
 
             <h1 className="text-2xl font-bold">
-              💬 Socket.IO Chat
+              💬 What_Chat
             </h1>
 
-            <p className="text-sm text-blue-100 mt-1">
-              Logged in as <span className="font-semibold">{username}</span>
+            <p className="text-sm text-green-400 mt-1">
+              User : <span className="font-semibold">{username}</span> <br/> Room : <span className="font-semibold">{room}</span>
             </p>
 
           </div>
