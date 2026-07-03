@@ -1,115 +1,230 @@
 import { useEffect, useRef, useState } from "react";
+
 import socket from "./socket/socket";
+
+import JoinScreen from "./components/JoinScreen";
+import ChatScreen from "./components/ChatScreen";
 
 function App() {
 
   const [joined, setJoined] = useState(false);
-  const [username, setUsername] = useState("");
-  const [socketId, setSocketId] = useState("");
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState([]);
-  const [room,setRoom] = useState("");
 
-  const bottomRef = useRef(null);
+  const [username, setUsername] = useState("");
+
+  const [room, setRoom] = useState("");
+
+  const [socketId, setSocketId] = useState("");
+
+  const [messages, setMessages] = useState({});
+
+  const [joinedRooms, setJoinedRooms] = useState([]);
+
+  const [activeRoom, setActiveRoom] = useState("");
+
+  const [welcomeMessage, setWelcomeMessage] = useState("");
+
+  const usernameRef = useRef(username);
+  const joinedRef = useRef(joined);
+  const joinedRoomsRef = useRef(joinedRooms);
+  const hasConnectedBeforeRef = useRef(false);
+
+  const createMessage = (message) => ({
+
+    ...message,
+
+    messageId: crypto.randomUUID()
+
+  });
 
   useEffect(() => {
 
-    socket.on("connect", () => {
+    usernameRef.current = username;
+
+  }, [username]);
+
+  useEffect(() => {
+
+    joinedRef.current = joined;
+
+  }, [joined]);
+
+  useEffect(() => {
+
+    joinedRoomsRef.current = joinedRooms;
+
+  }, [joinedRooms]);
+
+  useEffect(() => {
+
+    const restoreSession = () => {
+
+      if (!joinedRef.current || !usernameRef.current) return;
+
+      joinedRoomsRef.current.forEach((roomName) => {
+
+        socket.emit("join-room", {
+
+          room: roomName,
+
+          username: usernameRef.current
+
+        });
+
+      });
+
+    };
+
+    const onConnect = () => {
+
       setSocketId(socket.id);
-    });
 
-    socket.on("welcome", (data) => {
-      setMessages((prev) => [
+      if (hasConnectedBeforeRef.current) {
+
+        restoreSession();
+
+      }
+
+      hasConnectedBeforeRef.current = true;
+
+    };
+
+    const onWelcome = (data) => {
+      setWelcomeMessage(data.message);
+    };
+
+    const onRoomList = ({ rooms }) => {
+
+      setJoinedRooms(rooms);
+
+      setActiveRoom((current) => {
+
+        if (current && rooms.includes(current)) return current;
+
+        return rooms.length ? rooms[rooms.length - 1] : "";
+
+      });
+
+    };
+
+    const onUserJoined = (data) => {
+
+      setMessages((prev) => ({
         ...prev,
-        {
-          type: "system",
-          text: data.message
-        }
-      ]);
-    });
 
-    socket.on("user-joined", (data) => {
+        [data.room]: [...(prev[data.room] || []),
+        createMessage({
 
-      setMessages((prev) => [
-        ...prev,
-        {
           type: "join",
-          text: `${data.username} joined the chat`
-        }
-      ]);
+          room: data.room,
+          text: `${data.username} joined ${data.room}`
 
-    });
+        })]
 
-    socket.on("user-left", (data) => {
+      }));
 
-      setMessages((prev) => [
+    };
+
+    const onUserLeft = (data) => {
+
+      setMessages((prev) => ({ ...prev,
+
+        [data.room]: [  ...(prev[data.room] || []),
+          createMessage({
+
+            type: "left",
+            room: data.room,
+            text: `${data.username} left ${data.room}`
+
+          })
+
+        ]
+
+      }));
+
+    };
+
+    const onReceiveMessage = (data) => {
+
+      setMessages((prev) => ({
+
         ...prev,
-        {
-          type: "left",
-          text: `${data.username} left the chat`
-        }
-      ]);
 
-    });
+        [data.room]: [ ...(prev[data.room] || []),
 
-    socket.on("receive-message", (data) => {
+          createMessage(data)
 
-      setMessages((prev) => [
-        ...prev,
-        data
-      ]);
+        ]
 
-    });
+      }));
+
+    };
+
+    const onErrorMessage = (data) => {
+
+      window.alert(data.message);
+
+    };
+
+    socket.on("connect", onConnect);
+    socket.on("welcome", onWelcome);
+    socket.on("room-list", onRoomList);
+    socket.on("user-joined", onUserJoined);
+    socket.on("user-left", onUserLeft);
+    socket.on("receive-message", onReceiveMessage);
+    socket.on("error-message", onErrorMessage);
+
+    if (socket.connected) {
+
+      setSocketId(socket.id);
+
+    }
 
     return () => {
 
-      socket.off("connect");
-      socket.off("welcome");
-      socket.off("user-joined");
-      socket.off("user-left");
-      socket.off("receive-message");
-
-      socket.disconnect();
+      socket.off("connect", onConnect);
+      socket.off("welcome", onWelcome);
+      socket.off("room-list", onRoomList);
+      socket.off("user-joined", onUserJoined);
+      socket.off("user-left", onUserLeft);
+      socket.off("receive-message", onReceiveMessage);
+      socket.off("error-message", onErrorMessage);
 
     };
 
   }, []);
 
-  useEffect(() => {
-
-    bottomRef.current?.scrollIntoView({
-      behavior: "smooth"
-    });
-
-  }, [messages]);
-
   const joinChat = () => {
 
-    if (!username.trim() || !room.trim()) return;
+    const trimmedUsername = username.trim();
+    const trimmedRoom = room.trim();
 
-    socket.connect();
+    if (!trimmedUsername || !trimmedRoom) return;
 
-    socket.emit("join-room", {username,room});
+    const emitJoin = () => {
 
-    setJoined(true);
+      socket.emit("join-chat", {
 
-  };
+        username: trimmedUsername,
 
-  const sendMessage = () => {
+        room: trimmedRoom
 
-    if (!input.trim()) return;
+      });
 
-    socket.emit("send-message", input);
+      setJoined(true);
 
-    setInput("");
+      setActiveRoom(trimmedRoom);
 
-  };
+    };
 
-  const handleKeyDown = (e) => {
+    if (socket.connected) {
 
-    if (e.key === "Enter") {
+      emitJoin();
 
-      sendMessage();
+    } else {
+
+      socket.once("connect", emitJoin);
+
+      socket.connect();
 
     }
 
@@ -119,63 +234,15 @@ function App() {
 
     return (
 
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <JoinScreen
 
-        <div className="bg-white rounded-2xl shadow-2xl p-10 w-[420px]">
+        username={username}
+        setUsername={setUsername}
+        room={room}
+        setRoom={setRoom}
+        joinChat={joinChat}
 
-          <h1 className="text-4xl font-bold text-center mb-2">
-            💬 Chat App
-          </h1>
-
-          <p className="text-center text-gray-500 mb-8">
-            Join the realtime chat
-          </p>
-
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" ){
-                if(!username.trim() || !room.trim()){
-                  window.alert("enter the required details")
-                }
-                else{
-                  joinChat();
-                }
-              } 
-            }}
-            placeholder="Enter Username"
-            className="w-full border rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <input
-            type ="text"
-            value={room}
-            onChange={(e) => setRoom(e.target.value)}
-            placeholder="enter the room name"
-            onKeyDown={(e)=>{
-              if (e.key === "Enter" ){
-                if(!username.trim() || !room.trim()){
-                  window.alert("enter the required details")
-                }
-                else{
-                  joinChat();
-                }
-              } 
-            }}
-             className="w-full border rounded-lg p-3 outline-none mt-4 focus:ring-2 focus:ring-blue-500"
-          />
-
-          <button
-            onClick={joinChat}
-            className="w-full mt-5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-3 font-semibold transition"
-          >
-            Join Chat
-          </button>
-
-        </div>
-
-      </div>
+      />
 
     );
 
@@ -183,175 +250,17 @@ function App() {
 
   return (
 
-    <div className="h-screen bg-slate-100 flex items-center justify-center p-6">
+    <ChatScreen
 
-      <div className="w-full max-w-5xl h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+      socket={socket}
+      username={username}
+      socketId={socketId}
+      messages={messages[activeRoom] || []}
+      joinedRooms={joinedRooms}
+      activeRoom={activeRoom}
+      setActiveRoom={setActiveRoom}
 
-        {/* Header */}
-
-        <div className="bg-blue-600 text-white px-6 py-4 flex items-center justify-between">
-
-          <div>
-
-            <h1 className="text-2xl font-bold">
-              💬 What_Chat
-            </h1>
-
-            <p className="text-sm text-green-400 mt-1">
-              User : <span className="font-semibold">{username}</span> <br/> Room : <span className="font-semibold">{room}</span>
-            </p>
-
-          </div>
-
-          <div className="text-right">
-
-            <p className="text-xs uppercase tracking-wide text-blue-200">
-              Socket ID
-            </p>
-
-            <p className="text-sm font-mono">
-              {socketId}
-            </p>
-
-          </div>
-
-        </div>
-
-        {/* Messages */}
-
-        <div className="flex-1 overflow-y-auto bg-slate-50 p-6 space-y-4">
-
-          {
-
-            messages.map((msg, index) => {
-
-              if (msg.type === "system") {
-
-                return (
-
-                  <div
-                    key={index}
-                    className="text-center text-gray-500 text-sm"
-                  >
-                    {msg.text}
-                  </div>
-
-                );
-
-              }
-
-              if (msg.type === "join") {
-
-                return (
-
-                  <div
-                    key={index}
-                    className="text-center text-green-600 font-medium"
-                  >
-                     {msg.text}
-                  </div>
-
-                );
-
-              }
-
-              if (msg.type === "left") {
-
-                return (
-
-                  <div
-                    key={index}
-                    className="text-center text-red-500 font-medium"
-                  >
-                     {msg.text}
-                  </div>
-
-                );
-
-              }
-
-              const isMe = msg.id === socketId;
-
-              return (
-
-                <div
-                  key={index}
-                  className={`flex ${isMe ? "justify-end" : "justify-start"}`}
-                >
-
-                  <div
-                    className={`max-w-[70%] px-4 py-3 rounded-2xl shadow ${isMe
-                        ? "bg-blue-600 text-white"
-                        : "bg-white border"
-                      }`}
-                  >
-
-                    <p className="text-xs font-semibold mb-1">
-
-                      {isMe ? "You" : msg.username}
-
-                    </p>
-
-                    <p className="break-words">
-
-                      {msg.text}
-
-                    </p>
-
-                    <p
-                      className={`text-[10px] mt-2 ${isMe
-                          ? "text-blue-100"
-                          : "text-gray-400"
-                        }`}
-                    >
-
-                      {msg.time}
-
-                    </p>
-
-                  </div>
-
-                </div>
-
-              );
-
-            })
-
-          }
-
-          <div ref={bottomRef}></div>
-
-        </div>
-
-        {/* Footer */}
-
-        <div className="border-t bg-white p-4">
-
-          <div className="flex gap-3">
-
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type your message..."
-              className="flex-1 border border-gray-300 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
-            />
-
-            <button
-              onClick={sendMessage}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-8 rounded-xl font-semibold transition"
-            >
-              Send
-            </button>
-
-          </div>
-
-        </div>
-
-      </div>
-
-    </div>
+    />
 
   );
 
